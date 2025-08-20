@@ -1,0 +1,101 @@
+services:
+  app:
+    build: .
+    container_name: realtime-chat-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      # Kod değişikliklerinin anında konteynere yansıması için (hot-reloading)
+      - .:/usr/src/app
+      # Lokaldeki node_modules'ın konteynerdekini ezmesini engellemek için
+      - /usr/src/app/node_modules
+    networks:
+      - chat-network
+    depends_on:
+      - mongodb
+      - redis
+      - rabbitmq
+    environment:
+      # .env dosyasındaki localhost yerine servis isimlerini kullanıyoruz
+      MONGO_URI: mongodb://admin:password123@mongodb:27017/realtime_chat?authSource=admin
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://user:password@rabbitmq:5672
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      PORT: 3000
+      NODE_ENV: development
+  mongodb:
+    image: mongo
+    container_name: realtime-chat-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password123
+      MONGO_INITDB_DATABASE: realtime_chat
+    volumes:
+      - mongodb_data:/data/db
+    #  - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    networks:
+      - chat-network
+  redis:
+    image: redis
+    container_name: realtime-chat-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - chat-network
+  rabbitmq:
+    image: rabbitmq:management
+    container_name: realtime-chat-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: user
+      RABBITMQ_DEFAULT_PASS: password
+    networks:
+      - chat-network
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.14.1
+    container_name: realtime-chat-es
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    networks:
+      - chat-network
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.14.1
+    container_name: realtime-chat-kibana
+    restart: unless-stopped
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+    environment:
+      - "ELASTICSEARCH_HOSTS=http://elasticsearch:9200"
+    networks:
+      - chat-network
+
+volumes:
+  mongodb_data:
+  redis_data:
+  elasticsearch_data:
+networks:
+  chat-network:
+    driver: bridge
